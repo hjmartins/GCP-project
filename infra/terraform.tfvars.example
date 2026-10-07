@@ -1,0 +1,7 @@
+project_id         = "seu-projeto-id"
+billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
+alert_email        = "voce@exemplo.com"
+
+# Precisa bater com a moeda da conta de faturamento.
+budget_currency = "BRL"
+budget_amount   = 5
