@@ -1,0 +1,22 @@
+name: telemetry
+version: "1.0.0"
+profile: telemetry
+config-version: 2
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # run_date é obrigatório e vem do loader: --vars '{"run_date": "YYYY-MM-DD"}'.
+  # Janela de reprocessamento: cobre chegadas atrasadas (até 3 dias) com folga, e limita
+  # o MERGE e os testes às partições recentes em vez da tabela inteira.
+  lookback_days: 7
+
+models:
+  telemetry:
+    silver:
+      +schema: silver
+    gold:
+      +schema: gold

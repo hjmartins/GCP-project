@@ -17,3 +17,34 @@ jobs:
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
       - run: terraform validate
+
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [generator, loader]
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+
+  dbt:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: loader
+    env:
+      # parse não conecta no BigQuery; o projeto só precisa existir como variável.
+      GCP_PROJECT: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run dbt deps --project-dir ../dbt --profiles-dir ../dbt
+      - run: uv run dbt parse --project-dir ../dbt --profiles-dir ../dbt --vars '{"run_date": "2026-01-01"}'

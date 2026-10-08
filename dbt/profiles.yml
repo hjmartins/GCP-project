@@ -1,0 +1,14 @@
+# Sem segredos: autentica via ADC (seu login local ou a conta de serviço no Cloud Run).
+telemetry:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('GCP_PROJECT') }}"
+      dataset: silver
+      location: us-central1
+      threads: 4
+      job_execution_timeout_seconds: 300
+      # Guardrail de FinOps: nenhuma consulta pode cobrar mais que 1 GB.
+      maximum_bytes_billed: 1000000000

@@ -1,0 +1,106 @@
+version: 2
+
+# Os testes da readings olham só a janela recente: a tabela exige filtro de partição
+# e testar o histórico inteiro todo dia custaria bytes sem ganho.
+anchors:
+  - &readings_window
+    where: >-
+      ts >= timestamp(date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day))
+  - &sessions_window
+    where: >-
+      inicio >= timestamp(date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day))
+
+models:
+  - name: silver_readings
+    description: Leituras a cada 5 min, deduplicadas por (device_id, ts). Partição diária por ts, cluster por device_id.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [device_id, ts]
+          config: *readings_window
+    columns:
+      - name: device_id
+        data_tests:
+          - not_null:
+              config: *readings_window
+          - relationships:
+              arguments:
+                to: ref('silver_devices')
+                field: device_id
+              config: *readings_window
+      - name: ts
+        data_tests:
+          - not_null:
+              config: *readings_window
+      - name: heart_rate
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 30, max_value: 250}
+              config: *readings_window
+      - name: spo2
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 70, max_value: 100}
+              config: *readings_window
+      - name: battery
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 100}
+              config: *readings_window
+      - name: steps
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+              config: *readings_window
+
+  - name: silver_sessions
+    description: Sessões de sono, dia e treino (o treino fica dentro do período "dia").
+    columns:
+      - name: session_id
+        data_tests:
+          - unique:
+              config: *sessions_window
+          - not_null:
+              config: *sessions_window
+      - name: device_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('silver_devices')
+                field: device_id
+              config: *sessions_window
+      - name: tipo
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [sono, dia, treino]
+              config: *sessions_window
+      - name: duracao_min
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 1440, inclusive: true}
+              config: *sessions_window
+
+  - name: silver_users
+    description: Cadastro sintético de usuários (sem dados pessoais).
+    columns:
+      - name: user_id
+        data_tests: [unique, not_null]
+      - name: faixa_etaria
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"]
+
+  - name: silver_devices
+    description: Cadastro de dispositivos; cada um pertence a um usuário.
+    columns:
+      - name: device_id
+        data_tests: [unique, not_null]
+      - name: user_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('silver_users')
+                field: user_id

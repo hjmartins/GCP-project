@@ -3,6 +3,7 @@ locals {
   partition_expiration_ms = var.env == "dev" ? var.dev_partition_expiration_days * 24 * 60 * 60 * 1000 : null
 
   datasets = {
+    bronze = "Staging do lote diário carregado do GCS (sobrescrito a cada execução)."
     silver = "Dados deduplicados e tipados; inclui silver.quarantine."
     gold   = "Agregados de negócio, qualidade e custo."
   }

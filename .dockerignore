@@ -1,0 +1,13 @@
+# Usado pelo build do loader (contexto = raiz).
+.git
+infra
+generator
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+dbt/target
+dbt/logs
+dbt/dbt_packages
+loader/tests
+data

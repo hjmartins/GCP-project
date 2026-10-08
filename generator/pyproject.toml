@@ -1,0 +1,32 @@
+[project]
+name = "telemetry-gen"
+version = "0.1.0"
+description = "Gerador determinístico de telemetria sintética de vestíveis (camada Bronze)."
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.3",
+    "pyarrow>=25.0.1",
+]
+
+[project.scripts]
+telemetry-gen = "telemetry_gen.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "NPY"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,60 @@
+version: 2
+
+anchors:
+  - &metric_window
+    where: >-
+      metric_date >= date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day)
+
+models:
+  - name: gold_daily_user_metrics
+    description: Passos, frequência cardíaca e minutos de sono por usuário e dia.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [user_id, metric_date]
+          config: *metric_window
+    columns:
+      - name: user_id
+        data_tests:
+          - not_null:
+              config: *metric_window
+          - relationships:
+              arguments:
+                to: ref('silver_users')
+                field: user_id
+              config: *metric_window
+      - name: steps
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+              config: *metric_window
+      - name: sleep_minutes
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 1440}
+              config: *metric_window
+      - name: hr_avg
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 30, max_value: 250}
+              config: *metric_window
+
+  - name: gold_device_health
+    description: >-
+      Saúde diária por dispositivo: completude das leituras (esperado 288/dia), bateria e
+      sinal. Dispositivos sem leitura no dia aparecem com has_signal = false.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [device_id, metric_date]
+          config: *metric_window
+    columns:
+      - name: device_id
+        data_tests:
+          - not_null:
+              config: *metric_window
+      - name: completeness
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 1}
+              config: *metric_window

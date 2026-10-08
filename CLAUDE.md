@@ -8,7 +8,9 @@ Documento de projeto completo: `Projeto GCP Free Tier — Telemetria sintética 
 ## Regras de custo (obrigatórias)
 - NUNCA usar Cloud Composer, Dataflow, Dataproc, Cloud SQL ou VMs sempre ligadas.
 - Região: us-central1 para tudo.
-- Toda tabela BigQuery com partição por dia; readings clusterizada por device_id.
+- Toda tabela de fatos/agregados BigQuery com partição por dia; readings clusterizada por device_id.
+  Exceção: cadastros pequenos (silver_users, silver_devices) sem partição — as datas de 2024
+  expirariam na hora com a expiração de partição de dev.
 - Toda consulta com filtro de partição; nunca SELECT * em tabelas de leitura.
 - Datasets com expiração padrão de partição em dev.
 - Cloud Run Jobs com no máximo 1 vCPU e 512 MiB, salvo justificativa.

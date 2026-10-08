@@ -53,3 +53,15 @@ variable "force_destroy_buckets" {
   type        = bool
   default     = true
 }
+
+variable "generator_image" {
+  description = "Imagem do gerador (escrita por `make push` em images.auto.tfvars). Sem imagem, o job não é criado."
+  type        = string
+  default     = null
+}
+
+variable "loader_image" {
+  description = "Imagem do loader + dbt (escrita por `make push` em images.auto.tfvars)."
+  type        = string
+  default     = null
+}

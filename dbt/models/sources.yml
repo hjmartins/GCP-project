@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Staging do lote diário, carregado do GCS pelo loader (sobrescrito a cada execução).
+    schema: bronze
+    tables:
+      - name: users
+      - name: devices
+      - name: sessions
+      - name: readings
