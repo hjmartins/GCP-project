@@ -17,3 +17,7 @@ output "pipeline_service_account" {
 output "registry" {
   value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.pipeline.repository_id}"
 }
+
+output "workflow" {
+  value = google_workflows_workflow.daily_pipeline.name
+}
