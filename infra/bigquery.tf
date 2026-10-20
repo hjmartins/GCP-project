@@ -31,3 +31,26 @@ resource "google_bigquery_dataset_iam_member" "pipeline_editor" {
 }
 
 # A conexão BigLake (camada fria Iceberg) entra na Fase 6.
+
+# Mudanças de schema detectadas pelo loader (Fase 5): uma linha por coluna nova.
+resource "google_bigquery_table" "schema_events" {
+  dataset_id          = google_bigquery_dataset.layers["silver"].dataset_id
+  table_id            = "schema_events"
+  description         = "Colunas novas detectadas no lote (staging) que ainda não existiam na Silver."
+  deletion_protection = false
+  labels              = local.labels
+
+  time_partitioning {
+    type  = "DAY"
+    field = "batch_date"
+  }
+
+  schema = jsonencode([
+    { name = "detected_at", type = "TIMESTAMP", mode = "REQUIRED" },
+    { name = "batch_date", type = "DATE", mode = "REQUIRED", description = "Lote em que a coluna apareceu" },
+    { name = "table_name", type = "STRING", mode = "REQUIRED" },
+    { name = "column_name", type = "STRING", mode = "REQUIRED" },
+    { name = "column_type", type = "STRING", mode = "REQUIRED" },
+    { name = "change", type = "STRING", mode = "REQUIRED", description = "Por enquanto só 'added'" },
+  ])
+}

@@ -14,6 +14,7 @@ class Config:
     bronze_bucket: str
     location: str = "us-central1"
     staging_dataset: str = "bronze"
+    silver_dataset: str = "silver"
     dbt_dir: Path = DEFAULT_DBT_DIR
 
     @classmethod
@@ -31,5 +32,6 @@ class Config:
             bronze_bucket=env["BRONZE_BUCKET"],
             location=env.get("BQ_LOCATION", cls.location),
             staging_dataset=env.get("STAGING_DATASET", cls.staging_dataset),
+            silver_dataset=env.get("SILVER_DATASET", cls.silver_dataset),
             dbt_dir=Path(env.get("DBT_DIR", DEFAULT_DBT_DIR)),
         )

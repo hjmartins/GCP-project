@@ -6,6 +6,7 @@ from google.cloud import bigquery
 
 from telemetry_loader.config import Config
 from telemetry_loader.load import load_day
+from telemetry_loader.schema import detect_changes, record_changes
 
 
 def log(message: str, severity: str = "INFO", **fields) -> None:
@@ -32,6 +33,17 @@ def main() -> None:
     client = bigquery.Client(project=config.project_id, location=config.location)
     rows = load_day(client, config.bronze_bucket, config.staging_dataset, config.run_date)
     log("staging carregado", rows=rows)
+
+    changes = detect_changes(client, config.staging_dataset, config.silver_dataset)
+    if changes:
+        record_changes(client, config.silver_dataset, config.run_date, changes)
+        log(
+            "mudança de schema detectada",
+            severity="WARNING",
+            event="schema_change",
+            run_date=config.run_date.isoformat(),
+            columns=[f"{c.table_name}.{c.column_name} ({c.column_type})" for c in changes],
+        )
 
     result = dbtRunner().invoke(dbt_args(config))
     if not result.success:

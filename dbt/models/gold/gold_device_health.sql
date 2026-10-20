@@ -9,6 +9,9 @@
     )
 }}
 
+-- depends_on: {{ ref('gold_data_quality_daily') }}
+-- Só publica depois que os testes bloqueantes de qualidade passarem.
+
 {% set readings_per_day = 288 %}
 
 with daily as (

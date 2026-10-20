@@ -9,3 +9,10 @@ sources:
       - name: devices
       - name: sessions
       - name: readings
+
+  - name: silver
+    description: Tabelas da Silver escritas fora do dbt.
+    schema: silver
+    tables:
+      - name: schema_events
+        description: Colunas novas detectadas pelo loader (criada pelo Terraform).

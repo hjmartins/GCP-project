@@ -9,6 +9,9 @@
     )
 }}
 
+-- depends_on: {{ ref('gold_data_quality_daily') }}
+-- Só publica depois que os testes bloqueantes de qualidade passarem.
+
 -- Recalcula a janela inteira a cada execução: se chegar leitura atrasada, o dia afetado
 -- é corrigido no MERGE.
 with device_day as (

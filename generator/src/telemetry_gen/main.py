@@ -1,9 +1,9 @@
 import json
 import sys
 
+from telemetry_gen.batch import build_batch
 from telemetry_gen.config import Config
 from telemetry_gen.entities import generate_catalog
-from telemetry_gen.readings import generate_day
 from telemetry_gen.storage import write_table
 
 
@@ -14,12 +14,24 @@ def log(message: str, **fields) -> None:
 
 def run(config: Config) -> dict[str, str]:
     catalog = generate_catalog(config.seed_base, config.n_users)
-    daily = generate_day(catalog.devices, config.seed_base, config.run_date)
+    batch = build_batch(
+        catalog.devices,
+        config.seed_base,
+        config.run_date,
+        config.fault_rate,
+        config.skin_temp_since,
+    )
+    log(
+        "erros injetados",
+        fault_rate=config.fault_rate,
+        counts=batch.fault_counts,
+        readings_columns=batch.readings.column_names,
+    )
     tables = {
         "users": catalog.users,
         "devices": catalog.devices,
-        "sessions": daily.sessions,
-        "readings": daily.readings,
+        "sessions": batch.sessions,
+        "readings": batch.readings,
     }
     paths = {}
     for entity, table in tables.items():
@@ -35,6 +47,8 @@ def main() -> None:
         run_date=config.run_date.isoformat(),
         seed_base=config.seed_base,
         output_uri=config.output_uri,
+        fault_rate=config.fault_rate,
+        skin_temp_since=str(config.skin_temp_since),
     )
     run(config)
 

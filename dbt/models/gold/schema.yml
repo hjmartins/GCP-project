@@ -5,7 +5,38 @@ anchors:
     where: >-
       metric_date >= date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day)
 
+  - &batch_window
+    where: >-
+      batch_date >= date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day)
+
 models:
+  - name: gold_data_quality_daily
+    description: >-
+      Uma linha por verificação de qualidade por lote. Bloqueantes acima do limite param a
+      Gold de negócio (tests/assert_no_blocking_quality_failures.sql); avisos só vão para o painel.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [batch_date, check_name]
+          config: *batch_window
+    columns:
+      - name: check_name
+        data_tests:
+          - not_null:
+              config: *batch_window
+      - name: severity
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [blocking, warning]
+              config: *batch_window
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [pass, warn, fail]
+              config: *batch_window
+
   - name: gold_daily_user_metrics
     description: Passos, frequência cardíaca e minutos de sono por usuário e dia.
     data_tests:

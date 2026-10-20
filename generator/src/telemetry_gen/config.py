@@ -10,6 +10,11 @@ class Config:
     seed_base: int = 42
     output_uri: str = "./data"
     n_users: int = 200
+    # Fração das leituras afetada por cada tipo de erro injetado (Fase 5). 0 desliga.
+    fault_rate: float = 0.02
+    # A partir desta data as leituras trazem a coluna skin_temp (mudança de schema).
+    # SKIN_TEMP_SINCE vazio desliga.
+    skin_temp_since: date | None = date(2026, 11, 1)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Config":
@@ -28,4 +33,12 @@ class Config:
             seed_base=int(env.get("SEED_BASE", cls.seed_base)),
             output_uri=env.get("OUTPUT_URI", cls.output_uri),
             n_users=int(env.get("N_USERS", cls.n_users)),
+            fault_rate=float(env.get("FAULT_RATE", cls.fault_rate)),
+            skin_temp_since=_optional_date(env.get("SKIN_TEMP_SINCE"), cls.skin_temp_since),
         )
+
+
+def _optional_date(raw: str | None, default: date | None) -> date | None:
+    if raw is None:
+        return default
+    return date.fromisoformat(raw) if raw else None

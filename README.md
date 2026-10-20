@@ -12,7 +12,7 @@ Foco em **FinOps** e **qualidade de dados**. Detalhes no documento de projeto na
 | 1. Gerador | ✅ |
 | 2. Silver | ✅ |
 | 3. Gold + dbt | ✅ modelos e testes; painel no Looker Studio pendente (manual) |
-| 4. Orquestração | — |
+| 4. Orquestração | 🚧 no ar (Scheduler 06:00 BRT → Workflows → jobs); faltam definir a notificação do alerta e rodar 7 dias seguidos |
 | 5. Qualidade | — |
 | 6. Camada fria + FinOps | — |
 
@@ -52,6 +52,15 @@ Cloud Run Job "loader"     →  load job GCS → bronze.<entidade> (staging do d
 - **Cidades de uma lista fixa, sem Faker.** Agrupam bem no painel e não mudam entre versões de biblioteca.
 - **Artifact Registry guarda só a última versão de cada imagem.** As duas imagens somam ~375 MB,
   e o free tier é 0,5 GB.
+- **Orquestração.** O Cloud Scheduler dispara o workflow `daily-pipeline` às 06:00 (Brasília),
+  que roda gerador e loader em sequência e espera cada um terminar. Retry só para erros
+  transitórios da API; falha do job vai direto para o alerta (repetir um teste de dados que
+  falhou não resolve). Três contas de serviço com papéis mínimos: `scheduler-invoker` (só
+  inicia o workflow), `workflow-runner` (só executa os jobs, lê operações e grava logs) e
+  `pipeline-runner` (dados).
+- **Alerta de falha por log.** Uma política do Cloud Monitoring escuta o log de sistema do
+  Workflows e abre um incidente (notificação ainda a definir; e-mail desativado). Grátis hoje; o Google anunciou cobrança a partir de 01/09/2027
+  (~US$ 0,35/mês por condição baseada em log).
 - **Orçamento em R$ 5.** A meta do documento é US$ 1, mas a conta de faturamento é em BRL e a
   moeda do orçamento precisa ser a mesma da conta.
 
@@ -78,7 +87,8 @@ make tf-plan && make tf-apply   # cria/atualiza os Cloud Run Jobs com as imagens
 | --- | --- |
 | `make test` / `make lint` | pytest e ruff do gerador e do loader |
 | `make generate-local RUN_DATE=2026-10-01` | Gera um dia em `./data`, sem nuvem |
-| `make run-day RUN_DATE=2026-10-01` | Roda gerador + loader na nuvem para um dia |
+| `make run-day RUN_DATE=2026-10-01` | Roda gerador + loader na nuvem para um dia (direto nos jobs) |
+| `gcloud workflows run daily-pipeline --location us-central1 --data='{"run_date":"2026-10-01"}'` | Roda o dia pelo workflow, como o agendamento fará |
 | `make load-local RUN_DATE=...` | Roda o loader e o dbt localmente, com o seu login |
 
 ## Painel no Looker Studio (Fase 3)

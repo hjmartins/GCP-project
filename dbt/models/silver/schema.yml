@@ -6,13 +6,18 @@ anchors:
   - &readings_window
     where: >-
       ts >= timestamp(date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day))
+  - &batch_window
+    where: >-
+      batch_date >= date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day)
   - &sessions_window
     where: >-
       inicio >= timestamp(date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day))
 
 models:
   - name: silver_readings
-    description: Leituras a cada 5 min, deduplicadas por (device_id, ts). Partição diária por ts, cluster por device_id.
+    description: >-
+      Leituras válidas a cada 5 min, deduplicadas por (device_id, ts). Partição diária por ts,
+      cluster por device_id. As inválidas ficam em silver_readings_quarantine.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -52,6 +57,24 @@ models:
           - dbt_utils.accepted_range:
               arguments: {min_value: 0}
               config: *readings_window
+
+  - name: silver_readings_quarantine
+    description: >-
+      Leituras inválidas de cada lote, com o motivo (quarantine_reason). Partição por batch_date;
+      reprocessar um dia substitui a partição daquele dia.
+    columns:
+      - name: quarantine_reason
+        data_tests:
+          - not_null:
+              config: *batch_window
+          - accepted_values:
+              arguments:
+                values: [null_key, out_of_window, orphan_device, out_of_range]
+              config: *batch_window
+      - name: batch_date
+        data_tests:
+          - not_null:
+              config: *batch_window
 
   - name: silver_sessions
     description: Sessões de sono, dia e treino (o treino fica dentro do período "dia").
