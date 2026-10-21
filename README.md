@@ -12,23 +12,27 @@ Foco em **FinOps** e **qualidade de dados**. Detalhes no documento de projeto na
 | 1. Gerador | ✅ |
 | 2. Silver | ✅ |
 | 3. Gold + dbt | ✅ modelos e testes; painel no Looker Studio pendente (manual) |
-| 4. Orquestração | 🚧 no ar (Scheduler 06:00 BRT → Workflows → jobs); faltam definir a notificação do alerta e rodar 7 dias seguidos |
-| 5. Qualidade | — |
+| 4. Orquestração | ✅ 7 dias seguidos sem intervenção (10–16/10); notificação do alerta a definir |
+| 5. Qualidade | ✅ 7 erros injetados, todos detectados; Gold bloqueada acima do limite |
 | 6. Camada fria + FinOps | — |
 
 ## Como funciona hoje
 
 ```
-Cloud Run Job "generator"  →  gs://<project>-bronze/<entidade>/dt=YYYY-MM-DD/part-000.parquet
-Cloud Run Job "loader"     →  load job GCS → bronze.<entidade> (staging do dia)
-                           →  dbt build: silver_* (MERGE) → gold_* + 29 testes
+Cloud Scheduler 06:00 BRT → Workflows "daily-pipeline"
+  → Cloud Run Job "generator"  →  gs://<project>-bronze/<entidade>/dt=YYYY-MM-DD/part-000.parquet
+                                  (dados sintéticos + 2% de erros injetados)
+  → Cloud Run Job "loader"     →  load job GCS → bronze.<entidade> (staging do dia)
+                               →  detecção de schema → silver.schema_events
+                               →  dbt build: silver_* (MERGE) + quarentena
+                                  → gold_data_quality_daily → [bloqueio] → gold de negócio
 ```
 
 | Componente | Pasta | O que faz |
 | --- | --- | --- |
-| Gerador | `generator/` | 200 usuários, 250 dispositivos, ~690 sessões e 72 mil leituras por dia, determinístico por `(SEED_BASE, RUN_DATE)` |
-| Loader | `loader/` | Load jobs do Bronze para `bronze.*` e `dbt build` com `run_date` |
-| dbt | `dbt/` | Silver incremental (`MERGE`) e Gold (`gold_daily_user_metrics`, `gold_device_health`) |
+| Gerador | `generator/` | 200 usuários, 250 dispositivos, ~690 sessões e 72 mil leituras por dia, determinístico por `(SEED_BASE, RUN_DATE)`; injeta erros conhecidos (`FAULT_RATE`) |
+| Loader | `loader/` | Load jobs do Bronze para `bronze.*`, detecção de colunas novas e `dbt build` com `run_date` |
+| dbt | `dbt/` | Silver incremental (`MERGE`) + quarentena; Gold de qualidade e de negócio (`gold_daily_user_metrics`, `gold_device_health`) |
 | Infra | `infra/` | Terraform: buckets, datasets, Artifact Registry, Cloud Run Jobs, orçamento |
 
 ### Decisões de projeto
@@ -64,6 +68,44 @@ Cloud Run Job "loader"     →  load job GCS → bronze.<entidade> (staging do d
 - **Orçamento em R$ 5.** A meta do documento é US$ 1, mas a conta de faturamento é em BRL e a
   moeda do orçamento precisa ser a mesma da conta.
 
+## Qualidade de dados (Fase 5)
+
+O gerador estraga os dados de propósito (`FAULT_RATE`, padrão 2% por tipo) e o pipeline precisa
+pegar cada erro. Cada erro tem seed própria: a mesma data gera sempre os mesmos erros.
+
+| Erro injetado | Como o gerador cria | Onde é detectado | O que acontece |
+| --- | --- | --- | --- |
+| Duplicata | Reenvia leituras idênticas | `qualify` + `MERGE`; verificação `duplicate_readings` | Deduplica; **bloqueia** acima de 5% |
+| Chave nula | `device_id` ou `ts` nulo | `silver_readings_checked` → `null_key` | Quarentena; **bloqueia** acima de 5% |
+| Fora da faixa | `heart_rate` < 0 ou > 250, `spo2` > 100 | `out_of_range` | Quarentena + aviso |
+| Dispositivo órfão | `device_id` fora do cadastro (`D9xxxx`) | `left join` com `silver_devices` → `orphan_device` | Quarentena + aviso |
+| Chegada atrasada | Últimas 12 h de alguns dispositivos chegam 3 dias depois | `ts` anterior ao lote → `late_arrival` | Entra na partição certa; a janela de 7 dias recalcula a Gold |
+| Dispositivo sumido | 1 dispositivo/dia some por 2 a 5 dias | Dispositivo ativo sem leitura → `silent_devices`; `gold_device_health.has_signal` | Aviso |
+| Mudança de schema | Coluna `skin_temp` a partir de `SKIN_TEMP_SINCE` | Loader compara staging × Silver → `silver.schema_events` | Coluna aceita como nullable (`on_schema_change`) + aviso |
+
+**Peças principais**
+- `silver_readings_checked` (ephemeral) etiqueta cada linha do lote com `quarantine_reason`; a
+  `silver_readings` recebe as válidas e a `silver_readings_quarantine` as inválidas, com o motivo.
+- `tests/assert_readings_batch_reconciles.sql`: nenhuma linha some — lote = Silver + quarentena +
+  duplicatas removidas.
+- `gold_data_quality_daily`: uma linha por verificação por dia (`rows_evaluated`, `rows_failed`,
+  `failure_rate`, `status`), base do painel de qualidade.
+- `tests/assert_no_blocking_quality_failures.sql` olha só a tabela de qualidade, e a Gold de
+  negócio depende dela (`depends_on`): se um bloqueante falha, o dbt pula a Gold, o loader sai com
+  erro, o workflow falha e o alerta abre um incidente. A Silver e a quarentena ficam gravadas.
+
+**Resultados medidos**
+
+| Dia | Erros | Resultado |
+| --- | --- | --- |
+| 2026-10-20 (2%) | 1.394 de cada tipo por linha, 1.440 atrasadas, 3 sumidos, 1 coluna nova | Todos detectados com a contagem exata; bloqueantes `pass`, avisos `warn`; Gold publicada |
+| 2026-09-15 (8%, teste forçado) | 4.919 de cada tipo | `duplicate_readings` 7,4% e `null_key` 6,9% → `fail`; Gold **não** publicada |
+
+**Reprocessar um dia cujo conteúdo mudou.** O `MERGE` insere e atualiza, mas não apaga: se o lote
+de um dia já carregado muda (ex.: nova versão do gerador), as linhas antigas que não vieram de novo
+ficam na Silver e a reconciliação acusa. Nesse caso, apague o lote antes:
+`delete from silver.silver_readings where ts >= '<dia - 7>' and batch_date = '<dia>'`.
+
 ## Uso
 
 Pré-requisitos: `gcloud`, `terraform` (>= 1.6), `uv`, Docker e um projeto GCP com faturamento.
@@ -88,6 +130,7 @@ make tf-plan && make tf-apply   # cria/atualiza os Cloud Run Jobs com as imagens
 | `make test` / `make lint` | pytest e ruff do gerador e do loader |
 | `make generate-local RUN_DATE=2026-10-01` | Gera um dia em `./data`, sem nuvem |
 | `make run-day RUN_DATE=2026-10-01` | Roda gerador + loader na nuvem para um dia (direto nos jobs) |
+| `FAULT_RATE=0.08 make generate-local` | Gera um dia com mais erros (ex.: testar o bloqueio) |
 | `gcloud workflows run daily-pipeline --location us-central1 --data='{"run_date":"2026-10-01"}'` | Roda o dia pelo workflow, como o agendamento fará |
 | `make load-local RUN_DATE=...` | Roda o loader e o dbt localmente, com o seu login |
 
@@ -98,3 +141,15 @@ make tf-plan && make tf-apply   # cria/atualiza os Cloud Run Jobs com as imagens
 2. Adicione `gold_daily_user_metrics` e `gold_device_health`, com `metric_date` como dimensão de período.
 3. Sugestões: passos e sono médios por dia, FC média por faixa etária (junte com `silver.silver_users`),
    completude e bateria média por modelo/firmware.
+
+### Página de qualidade (Fase 5)
+
+Fonte: `gold.gold_data_quality_daily`, com `batch_date` como dimensão de período.
+
+- **Tabela de status do dia:** `check_name`, `severity`, `rows_failed`, `failure_rate`, `status`,
+  com formatação condicional (`fail` vermelho, `warn` amarelo).
+- **Série temporal:** `failure_rate` por `check_name`, com uma linha de referência em 0,05 (o limite
+  dos bloqueantes).
+- **Quarentena por motivo:** `silver.silver_readings_quarantine`, contagem por `quarantine_reason`
+  e `batch_date`.
+- **Dispositivos sem sinal:** `gold.gold_device_health` filtrado em `has_signal = false`.
