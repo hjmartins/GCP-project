@@ -4,9 +4,12 @@ Por que load job e não tabela externa: load jobs do BigQuery não cobram bytes 
 e consultar uma tabela externa cobra. O staging guarda só o lote do dia (WRITE_TRUNCATE).
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 from google.cloud import bigquery
+
+# Cadastro vem completo todo dia: no backfill basta o último dia (carregar todos duplicaria).
+SNAPSHOT_ENTITIES = {"users", "devices"}
 
 # Coluna de partição diária do staging. Cadastro (users, devices) é pequeno e não é particionado.
 ENTITIES: dict[str, str | None] = {
@@ -33,11 +36,22 @@ def job_config(partition_field: str | None) -> bigquery.LoadJobConfig:
     return config
 
 
-def load_day(client: bigquery.Client, bucket: str, dataset: str, day: date) -> dict[str, int]:
-    """Carrega as 4 entidades do dia e devolve o número de linhas de cada uma."""
+def source_uris(bucket: str, entity: str, start: date, end: date) -> list[str]:
+    """Um curinga por dia do intervalo; cadastro só do último dia."""
+    if entity in SNAPSHOT_ENTITIES:
+        return [source_uri(bucket, entity, end)]
+    days = (end - start).days + 1
+    return [source_uri(bucket, entity, start + timedelta(days=i)) for i in range(days)]
+
+
+def load_range(
+    client: bigquery.Client, bucket: str, dataset: str, start: date, end: date
+) -> dict[str, int]:
+    """Carrega as 4 entidades de start..end (um load job por entidade, gratuito) e devolve o
+    número de linhas de cada uma. Dia a dia, start == end."""
     jobs = {
         entity: client.load_table_from_uri(
-            source_uri(bucket, entity, day),
+            source_uris(bucket, entity, start, end),
             f"{client.project}.{dataset}.{entity}",
             job_config=job_config(partition_field),
         )

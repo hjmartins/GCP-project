@@ -15,6 +15,20 @@ class Config:
     # A partir desta data as leituras trazem a coluna skin_temp (mudança de schema).
     # SKIN_TEMP_SINCE vazio desliga.
     skin_temp_since: date | None = date(2026, 11, 1)
+    # Backfill: START_DATE..END_DATE (inclusive) em vez de um único RUN_DATE. No Cloud Run
+    # com várias tarefas, cada uma gera uma fatia das datas
+    # (CLOUD_RUN_TASK_INDEX de CLOUD_RUN_TASK_COUNT).
+    end_date: date | None = None
+    task_index: int = 0
+    task_count: int = 1
+
+    def dates(self) -> list[date]:
+        """Datas que esta tarefa deve gerar."""
+        if self.end_date is None:
+            return [self.run_date]
+        span = (self.end_date - self.run_date).days + 1
+        all_dates = [self.run_date + timedelta(days=i) for i in range(span)]
+        return all_dates[self.task_index :: self.task_count]
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Config":
@@ -22,7 +36,7 @@ class Config:
 
         Sem RUN_DATE, gera o dia anterior (UTC): o pipeline diário processa o dia fechado.
         """
-        raw_date = env.get("RUN_DATE")
+        raw_date = env.get("START_DATE") or env.get("RUN_DATE")
         run_date = (
             date.fromisoformat(raw_date)
             if raw_date
@@ -35,6 +49,9 @@ class Config:
             n_users=int(env.get("N_USERS", cls.n_users)),
             fault_rate=float(env.get("FAULT_RATE", cls.fault_rate)),
             skin_temp_since=_optional_date(env.get("SKIN_TEMP_SINCE"), cls.skin_temp_since),
+            end_date=_optional_date(env.get("END_DATE"), None),
+            task_index=int(env.get("CLOUD_RUN_TASK_INDEX", 0)),
+            task_count=int(env.get("CLOUD_RUN_TASK_COUNT", 1)),
         )
 
 

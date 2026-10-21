@@ -5,7 +5,7 @@ from dbt.cli.main import dbtRunner
 from google.cloud import bigquery
 
 from telemetry_loader.config import Config
-from telemetry_loader.load import load_day
+from telemetry_loader.load import load_range
 from telemetry_loader.schema import detect_changes, record_changes
 
 
@@ -15,23 +15,32 @@ def log(message: str, severity: str = "INFO", **fields) -> None:
 
 
 def dbt_args(config: Config) -> list[str]:
-    return [
+    dbt_vars = {"run_date": config.run_date.isoformat(), "lookback_days": config.lookback_days}
+    args = [
         "build",
         "--project-dir",
         str(config.dbt_dir),
         "--profiles-dir",
         str(config.dbt_dir),
         "--vars",
-        json.dumps({"run_date": config.run_date.isoformat()}),
+        json.dumps(dbt_vars),
     ]
+    # Backfill recria Silver e Gold do zero com o histórico inteiro.
+    return [*args, "--full-refresh"] if config.is_backfill else args
 
 
 def main() -> None:
     config = Config.from_env()
-    log("carregando lote", run_date=config.run_date.isoformat())
+    start = config.backfill_start or config.run_date
+    log(
+        "carregando lote",
+        start=start.isoformat(),
+        run_date=config.run_date.isoformat(),
+        backfill=config.is_backfill,
+    )
 
     client = bigquery.Client(project=config.project_id, location=config.location)
-    rows = load_day(client, config.bronze_bucket, config.staging_dataset, config.run_date)
+    rows = load_range(client, config.bronze_bucket, config.staging_dataset, start, config.run_date)
     log("staging carregado", rows=rows)
 
     changes = detect_changes(client, config.staging_dataset, config.silver_dataset)

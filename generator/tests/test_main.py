@@ -36,3 +36,23 @@ def test_config_defaults_to_yesterday():
     config = Config.from_env({})
     assert config.run_date == datetime.now(UTC).date() - timedelta(days=1)
     assert config.seed_base == 42
+
+
+def test_single_day_when_no_end_date():
+    config = Config.from_env({"RUN_DATE": "2026-10-01"})
+    assert config.dates() == [date(2026, 10, 1)]
+
+
+def test_backfill_range_is_inclusive():
+    config = Config.from_env({"START_DATE": "2026-01-01", "END_DATE": "2026-01-10"})
+    dates = config.dates()
+    assert dates[0] == date(2026, 1, 1) and dates[-1] == date(2026, 1, 10)
+    assert len(dates) == 10
+
+
+def test_tasks_split_the_range_without_gaps_or_overlap():
+    env = {"START_DATE": "2025-10-21", "END_DATE": "2026-10-20", "CLOUD_RUN_TASK_COUNT": "4"}
+    shards = [Config.from_env({**env, "CLOUD_RUN_TASK_INDEX": str(i)}).dates() for i in range(4)]
+    all_dates = [d for shard in shards for d in shard]
+    assert len(all_dates) == len(set(all_dates)) == 365
+    assert max(len(s) for s in shards) - min(len(s) for s in shards) <= 1

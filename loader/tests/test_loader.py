@@ -46,4 +46,40 @@ def test_dbt_receives_run_date():
     config = Config(run_date=date(2026, 10, 1), project_id="p", bronze_bucket="b")
     args = dbt_args(config)
     assert args[0] == "build"
-    assert json.loads(args[args.index("--vars") + 1]) == {"run_date": "2026-10-01"}
+    assert json.loads(args[args.index("--vars") + 1])["run_date"] == "2026-10-01"
+
+
+def test_backfill_loads_every_day_but_catalog_only_once():
+    from telemetry_loader.load import source_uris
+
+    start, end = date(2026, 1, 1), date(2026, 1, 3)
+    readings = source_uris("b", "readings", start, end)
+    assert readings == [
+        "gs://b/readings/dt=2026-01-01/*.parquet",
+        "gs://b/readings/dt=2026-01-02/*.parquet",
+        "gs://b/readings/dt=2026-01-03/*.parquet",
+    ]
+    assert source_uris("b", "users", start, end) == ["gs://b/users/dt=2026-01-03/*.parquet"]
+    assert source_uris("b", "readings", end, end) == [readings[-1]]
+
+
+def test_daily_run_uses_seven_day_window_without_full_refresh():
+    config = Config(run_date=date(2026, 10, 20), project_id="p", bronze_bucket="b")
+    args = dbt_args(config)
+    assert "--full-refresh" not in args
+    assert json.loads(args[args.index("--vars") + 1])["lookback_days"] == 7
+
+
+def test_backfill_opens_window_over_whole_range_and_full_refreshes():
+    config = Config.from_env(
+        {
+            "RUN_DATE": "2026-10-20",
+            "BACKFILL_START": "2025-10-21",
+            "GCP_PROJECT": "p",
+            "BRONZE_BUCKET": "b",
+        }
+    )
+    args = dbt_args(config)
+    assert "--full-refresh" in args
+    # 364 dias entre as datas + 7 de folga para as leituras atrasadas do primeiro dia.
+    assert json.loads(args[args.index("--vars") + 1])["lookback_days"] == 371

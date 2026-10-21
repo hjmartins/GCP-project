@@ -11,4 +11,5 @@ telemetry:
       threads: 4
       job_execution_timeout_seconds: 300
       # Guardrail de FinOps: nenhuma consulta pode cobrar mais que 1 GB.
-      maximum_bytes_billed: 1000000000
+      # Backfill sobe o teto via DBT_MAX_BYTES_BILLED (ex.: 5 GB); acima disso a consulta é recusada.
+      maximum_bytes_billed: "{{ env_var('DBT_MAX_BYTES_BILLED', '1000000000') | as_number }}"

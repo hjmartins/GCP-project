@@ -9,7 +9,8 @@ TAG := $(shell git rev-parse --short HEAD)$(shell test -z "$$(git status --porce
 RUN_DATE ?= $(shell date -u -d yesterday +%F)
 
 .PHONY: tf-init tf-fmt tf-validate tf-plan tf-apply \
-	test lint generate-local load-local build push run-generator run-loader run-day
+	test lint generate-local load-local build push run-generator run-loader run-day \
+	backfill-generate backfill-load
 
 # --- Terraform ---------------------------------------------------------------
 
@@ -71,3 +72,17 @@ run-loader:
 
 # Um dia completo na nuvem: gera e carrega. Ex.: make run-day RUN_DATE=2026-10-01
 run-day: run-generator run-loader
+
+# --- Backfill ----------------------------------------------------------------
+# Ex.: make backfill-generate backfill-load BACKFILL_START=2025-10-21 BACKFILL_END=2026-10-20
+BACKFILL_TASKS ?= 4
+# Teto por consulta no backfill: acima disso o BigQuery recusa a consulta antes de cobrar.
+BACKFILL_MAX_BYTES ?= 5000000000
+
+backfill-generate:
+	gcloud run jobs execute generator --region $(REGION) --wait --tasks $(BACKFILL_TASKS) \
+		--update-env-vars START_DATE=$(BACKFILL_START),END_DATE=$(BACKFILL_END)
+
+backfill-load:
+	gcloud run jobs execute loader --region $(REGION) --wait \
+		--update-env-vars RUN_DATE=$(BACKFILL_END),BACKFILL_START=$(BACKFILL_START),DBT_MAX_BYTES_BILLED=$(BACKFILL_MAX_BYTES)
