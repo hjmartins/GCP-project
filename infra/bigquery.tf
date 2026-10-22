@@ -6,16 +6,19 @@ locals {
     bronze = "Staging do lote diário carregado do GCS (sobrescrito a cada execução)."
     silver = "Dados deduplicados e tipados; inclui silver.quarantine."
     gold   = "Agregados de negócio, qualidade e custo."
+    cold   = "Camada fria: tabelas externas Iceberg (BigLake) sobre o bucket frio."
   }
 }
 
 resource "google_bigquery_dataset" "layers" {
   for_each = local.datasets
 
-  dataset_id                      = each.key
-  description                     = each.value
-  location                        = var.region
-  default_partition_expiration_ms = local.partition_expiration_ms
+  dataset_id  = each.key
+  description = each.value
+  location    = var.region
+  # A camada fria existe para guardar dado antigo: nada de expiração. (Em tabela externa a
+  # opção nem teria efeito, mas deixar explícito evita surpresa se uma tabela nativa entrar.)
+  default_partition_expiration_ms = each.key == "cold" ? null : local.partition_expiration_ms
   delete_contents_on_destroy      = var.env == "dev"
   labels                          = merge(local.labels, { layer = each.key })
 
@@ -30,7 +33,7 @@ resource "google_bigquery_dataset_iam_member" "pipeline_editor" {
   member     = google_service_account.pipeline.member
 }
 
-# A conexão BigLake (camada fria Iceberg) entra na Fase 6.
+# A conexão BigLake da camada fria fica em biglake.tf.
 
 # Mudanças de schema detectadas pelo loader (Fase 5): uma linha por coluna nova.
 resource "google_bigquery_table" "schema_events" {

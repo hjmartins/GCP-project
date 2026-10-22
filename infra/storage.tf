@@ -12,8 +12,10 @@ resource "google_storage_bucket" "bronze" {
   depends_on = [google_project_service.apis]
 }
 
-# Camada fria: tabelas Iceberg. Lifecycle Nearline aos 30 dias e Coldline aos 90
-# (regra a validar no experimento 3 de FinOps).
+# Camada fria: tabelas Iceberg escritas pelo archiver. Fica em Standard: é a única classe
+# coberta pelo free tier do GCS, e Nearline/Coldline cobram leitura (retrieval) a cada consulta
+# e exclusão antecipada quando arquivos são reescritos antes de 30/90 dias. A comparação entre
+# classes é feita como projeção no experimento 4 de FinOps (finops/experiments.md).
 resource "google_storage_bucket" "cold" {
   name     = "${var.project_id}-cold"
   location = upper(var.region)
@@ -23,28 +25,6 @@ resource "google_storage_bucket" "cold" {
   public_access_prevention    = "enforced"
   force_destroy               = var.force_destroy_buckets
   labels                      = merge(local.labels, { layer = "cold" })
-
-  lifecycle_rule {
-    condition {
-      age                   = 30
-      matches_storage_class = ["STANDARD"]
-    }
-    action {
-      type          = "SetStorageClass"
-      storage_class = "NEARLINE"
-    }
-  }
-
-  lifecycle_rule {
-    condition {
-      age                   = 90
-      matches_storage_class = ["NEARLINE"]
-    }
-    action {
-      type          = "SetStorageClass"
-      storage_class = "COLDLINE"
-    }
-  }
 
   depends_on = [google_project_service.apis]
 }
