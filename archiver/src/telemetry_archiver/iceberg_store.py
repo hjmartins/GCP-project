@@ -5,9 +5,11 @@
   o mesmo lote de novo não duplica nada.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 
 import pyarrow as pa
+import pyarrow.fs as pafs
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.expressions import And, GreaterThanOrEqual, LessThan
@@ -42,6 +44,14 @@ PARTITION_SPEC = PartitionSpec(
     PartitionField(source_id=2, field_id=1000, transform=DayTransform(), name="ts_day")
 )
 
+# Cada commit gera um metadata.json novo; sem limite, eles se acumulam para sempre. O Iceberg
+# apaga os mais antigos sozinho, guardando os últimos N (folga para a tabela externa do
+# BigQuery, que aponta para um metadata.json específico até o archiver recriá-la).
+TABLE_PROPERTIES = {
+    "write.metadata.delete-after-commit.enabled": "true",
+    "write.metadata.previous-versions-max": "50",
+}
+
 
 def open_catalog(sqlite_path: str, warehouse: str) -> SqlCatalog:
     """Catálogo SQLite local (o arquivo é baixado/devolvido ao bucket por catalog_sync)."""
@@ -50,9 +60,19 @@ def open_catalog(sqlite_path: str, warehouse: str) -> SqlCatalog:
 
 def ensure_table(catalog: Catalog, name: str, location: str) -> Table:
     catalog.create_namespace_if_not_exists(NAMESPACE)
-    return catalog.create_table_if_not_exists(
-        (NAMESPACE, name), schema=SCHEMA, partition_spec=PARTITION_SPEC, location=location
+    table = catalog.create_table_if_not_exists(
+        (NAMESPACE, name),
+        schema=SCHEMA,
+        partition_spec=PARTITION_SPEC,
+        location=location,
+        properties=TABLE_PROPERTIES,
     )
+    # Tabelas criadas antes desta configuração recebem as propriedades agora.
+    missing = {k: v for k, v in TABLE_PROPERTIES.items() if table.properties.get(k) != v}
+    if missing:
+        with table.transaction() as tx:
+            tx.set_properties(**missing)
+    return table
 
 
 def to_iceberg_arrow(rows: pa.Table, archived_at: datetime) -> pa.Table:
@@ -91,3 +111,47 @@ def count_days(table: Table, first: date, last: date) -> int:
     """Linhas do Iceberg em first..last, contadas pelos metadados dos arquivos (sem ler dados)."""
     tasks = table.scan(row_filter=days_filter(first, last)).plan_files()
     return sum(task.file.record_count for task in tasks)
+
+
+@dataclass(frozen=True)
+class CleanupResult:
+    snapshots_before: int
+    snapshots_after: int
+    files_deleted: int
+    bytes_freed: int
+
+
+def expire_and_remove_orphans(
+    table: Table, keep_days: int, now: datetime, min_file_age: timedelta = timedelta(hours=1)
+) -> CleanupResult:
+    """Apaga versões (snapshots) com mais de keep_days e os arquivos de dados que nenhuma versão
+    restante usa.
+
+    O expire_snapshots do PyIceberg só tira as versões dos metadados: os arquivos continuam no
+    bucket (e sendo cobrados). Por isso a segunda etapa compara os arquivos da pasta data/ com os
+    referenciados (inspect.all_files) e apaga a diferença. min_file_age protege arquivos que
+    acabaram de ser gravados e ainda não entraram num commit.
+    """
+    before = len(table.metadata.snapshots)
+    table.maintenance.expire_snapshots().older_than(now - timedelta(days=keep_days)).commit()
+    table = table.refresh()
+
+    referenced = {_strip_scheme(p) for p in table.inspect.all_files()["file_path"].to_pylist()}
+    fs, data_root = pafs.FileSystem.from_uri(f"{table.location()}/data")
+    files = fs.get_file_info(pafs.FileSelector(data_root, recursive=True, allow_not_found=True))
+
+    deleted = freed = 0
+    for info in files:
+        if info.type != pafs.FileType.File or _strip_scheme(info.path) in referenced:
+            continue
+        if info.mtime is not None and now - info.mtime < min_file_age:
+            continue
+        fs.delete_file(info.path)
+        deleted += 1
+        freed += info.size or 0
+    return CleanupResult(before, len(table.metadata.snapshots), deleted, freed)
+
+
+def _strip_scheme(path: str) -> str:
+    """'gs://b/x' e 'b/x' (como o pyarrow lista) viram o mesmo caminho."""
+    return path.split("://", 1)[-1]

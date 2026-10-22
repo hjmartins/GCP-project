@@ -3,7 +3,8 @@
 1. Lista as partições da Silver anteriores ao corte (metadados, sem consulta).
 2. Para cada lote de dias: lê pela Storage Read API, grava no Iceberg (substituindo os dias)
    e confere que o Iceberg tem exatamente as linhas lidas.
-3. Devolve o catálogo ao bucket.
+3. Apaga versões do Iceberg com mais de KEEP_SNAPSHOT_DAYS e os arquivos que ficaram órfãos;
+   depois devolve o catálogo ao bucket.
 4. Recria a tabela externa cold.<tabela> apontando para o metadata.json novo (sql/).
 5. Só então apaga esses dias da Silver (sql/). Se algo falhar antes, a Silver fica intacta e
    a próxima execução refaz os lotes (a escrita é idempotente).
@@ -76,10 +77,16 @@ def run(config: Config) -> None:
             total += rows.num_rows
             log("lote arquivado", first=first, last=last, rows=rows.num_rows)
 
+        cleanup = iceberg_store.expire_and_remove_orphans(
+            table, config.keep_snapshot_days, datetime.now(UTC)
+        )
+        log("iceberg limpo", **vars(cleanup))
+
         catalog_sync.upload(
             gcs, config.cold_bucket, config.catalog_object, catalog_path, generation
         )
-        metadata_uri = table.metadata_location
+        # A limpeza também fez commit: a tabela externa precisa do metadata.json mais novo.
+        metadata_uri = table.refresh().metadata_location
 
     identifiers = {
         "project": config.project_id,

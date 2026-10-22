@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        project: [generator, loader]
+        project: [generator, loader, archiver]
     defaults:
       run:
         working-directory: ${{ matrix.project }}

@@ -69,7 +69,7 @@ resource "google_project_iam_member" "scheduler_invokes_workflows" {
 resource "google_workflows_workflow" "daily_pipeline" {
   name                = "daily-pipeline"
   region              = var.region
-  description         = "Gerador → loader (staging + dbt build) para um run_date."
+  description         = "Gerador → loader (staging + dbt build) → archiver (Silver > 90 dias → Iceberg) para um run_date."
   service_account     = google_service_account.workflow.id
   source_contents     = file("${path.module}/../workflows/daily_pipeline.yaml")
   deletion_protection = false

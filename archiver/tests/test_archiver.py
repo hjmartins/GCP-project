@@ -169,3 +169,43 @@ def test_rehearsal_overrides_point_away_from_production():
     )
     defaults = Config.from_env({"GCP_PROJECT": "p", "COLD_BUCKET": "b"})
     assert (defaults.silver_table, defaults.cold_table) == ("silver_readings", "readings")
+
+
+# --- limpeza de versões e arquivos órfãos -----------------------------------------------
+
+
+def _data_files(root) -> int:
+    return sum(1 for p in (root / "readings" / "data").rglob("*") if p.is_file())
+
+
+def test_cleanup_removes_old_versions_and_their_files(table, tmp_path):
+    for _ in range(3):  # 3 reescritas do mesmo dia: 3 versões, 3 arquivos (só 1 em uso)
+        _write(table, date(2026, 1, 1), days=1)
+    assert _data_files(tmp_path) == 3
+
+    later = datetime.now(UTC) + timedelta(days=8)
+    result = iceberg_store.expire_and_remove_orphans(
+        table, keep_days=7, now=later, min_file_age=timedelta(0)
+    )
+    assert result.files_deleted == 2 and result.bytes_freed > 0
+    assert result.snapshots_after < result.snapshots_before
+    assert _data_files(tmp_path) == 1
+    # Os dados continuam lá, inteiros.
+    assert iceberg_store.count_days(table.refresh(), date(2026, 1, 1), date(2026, 1, 1)) == 3
+
+
+def test_cleanup_keeps_recent_versions(table, tmp_path):
+    for _ in range(3):
+        _write(table, date(2026, 1, 1), days=1)
+    result = iceberg_store.expire_and_remove_orphans(
+        table, keep_days=7, now=datetime.now(UTC), min_file_age=timedelta(0)
+    )
+    # Nada tem mais de 7 dias: todas as versões (e seus arquivos) ficam para time travel.
+    assert result.files_deleted == 0
+    assert _data_files(tmp_path) == 3
+
+
+def test_table_keeps_a_bounded_number_of_metadata_files(table):
+    props = table.properties
+    assert props["write.metadata.delete-after-commit.enabled"] == "true"
+    assert int(props["write.metadata.previous-versions-max"]) > 0

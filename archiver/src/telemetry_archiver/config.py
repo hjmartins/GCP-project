@@ -19,6 +19,8 @@ class Config:
     archive_after_days: int = 90
     # Dias por lote: limita a memória (~460 mil leituras por lote de 7 dias).
     chunk_days: int = 7
+    # Versões do Iceberg mantidas para time travel; as mais antigas e seus arquivos são apagados.
+    keep_snapshot_days: int = 7
     # Objeto do catálogo Iceberg (SQLite) no bucket frio.
     catalog_object: str = "catalog/iceberg_catalog.db"
 
@@ -48,6 +50,7 @@ class Config:
             location=env.get("BQ_LOCATION", cls.location),
             archive_after_days=int(env.get("ARCHIVE_AFTER_DAYS", cls.archive_after_days)),
             chunk_days=int(env.get("CHUNK_DAYS", cls.chunk_days)),
+            keep_snapshot_days=int(env.get("KEEP_SNAPSHOT_DAYS", cls.keep_snapshot_days)),
             # Sobrescritas usadas em ensaios: apontar para cópias, sem tocar em produção.
             silver_table=env.get("SILVER_TABLE", cls.silver_table),
             cold_table=env.get("COLD_TABLE", cls.cold_table),
