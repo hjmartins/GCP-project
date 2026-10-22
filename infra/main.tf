@@ -69,3 +69,19 @@ resource "google_project_iam_member" "pipeline_bq_read_session" {
   role    = "roles/bigquery.readSessionUser"
   member  = google_service_account.pipeline.member
 }
+
+# gold_cost_daily lê INFORMATION_SCHEMA.JOBS do projeto inteiro (consultas de todas as contas),
+# o que exige bigquery.jobs.listAll. O papel pronto com essa permissão (bigquery.resourceViewer)
+# também lê reservas e capacidade: daí o papel customizado só com o listAll.
+resource "google_project_iam_custom_role" "jobs_list_all" {
+  role_id     = "bigqueryJobsListAll"
+  title       = "BigQuery Jobs List All"
+  description = "Só lista os jobs de todas as contas do projeto (custo diário em gold_cost_daily)."
+  permissions = ["bigquery.jobs.listAll"]
+}
+
+resource "google_project_iam_member" "pipeline_lists_all_jobs" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.jobs_list_all.id
+  member  = google_service_account.pipeline.member
+}

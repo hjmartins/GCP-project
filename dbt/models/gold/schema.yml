@@ -10,6 +10,39 @@ anchors:
       batch_date >= date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day)
 
 models:
+  - name: gold_cost_daily
+    description: >-
+      Custo do projeto por dia, em formato longo: bytes e custo estimado das consultas (por
+      origem: pipeline ou manual) e storage lógico por dataset (ativo × long-term). O custo
+      estimado ignora o free tier, para mostrar quanto custaria fora dele.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [cost_date, category, component, metric]
+          config: &cost_window
+            where: >-
+              cost_date >= date_sub(date('{{ var("run_date") }}'), interval {{ var("lookback_days") }} day)
+    columns:
+      - name: category
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [query, storage]
+              config: *cost_window
+      - name: unit
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [bytes, count, usd]
+              config: *cost_window
+      - name: value
+        data_tests:
+          - not_null:
+              config: *cost_window
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+              config: *cost_window
+
   - name: gold_data_quality_daily
     description: >-
       Uma linha por verificação de qualidade por lote. Bloqueantes acima do limite param a
