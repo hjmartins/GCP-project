@@ -102,3 +102,41 @@ resource "google_cloud_run_v2_job" "loader" {
     }
   }
 }
+
+
+resource "google_cloud_run_v2_job" "archiver" {
+  count = var.loader_image == null ? 0 : 1
+
+  name                = "archiver"
+  location            = var.region
+  deletion_protection = false
+  labels              = local.labels
+
+  template {
+    task_count = 1
+    template {
+      service_account = google_service_account.pipeline.email
+      max_retries     = 1
+      timeout         = "1800s"
+
+      containers {
+        image   = var.loader_image
+        command = ["telemetry-archiver"]
+        resources {
+          limits = {
+            cpu    = "1"
+            memory = "512Mi"
+          }
+        }
+        env {
+          name  = "GCP_PROJECT"
+          value = var.project_id
+        }
+        env {
+          name  = "COLD_BUCKET"
+          value = google_storage_bucket.cold.name
+        }
+      }
+    }
+  }
+}

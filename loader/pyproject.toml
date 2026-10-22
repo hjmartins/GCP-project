@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "dbt-bigquery>=1.12.1",
     "google-cloud-bigquery>=3.46.1",
+    "telemetry-archiver",
 ]
 
 [project.scripts]
@@ -24,6 +25,9 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv.sources]
+telemetry-archiver = { path = "../archiver" }
 
 [dependency-groups]
 dev = [

@@ -5,11 +5,11 @@ REGION := us-central1
 REGISTRY := $(REGION)-docker.pkg.dev/$(PROJECT_ID)/pipeline
 # Tag = commit atual; "-dirty" quando há mudanças não commitadas (inclusive arquivos novos)
 # no código das imagens.
-TAG := $(shell git rev-parse --short HEAD)$(shell test -z "$$(git status --porcelain -- generator loader dbt)" || echo -dirty)
+TAG := $(shell git rev-parse --short HEAD)$(shell test -z "$$(git status --porcelain -- generator loader dbt archiver)" || echo -dirty)
 RUN_DATE ?= $(shell date -u -d yesterday +%F)
 
 .PHONY: tf-init tf-fmt tf-validate tf-plan tf-apply \
-	test lint generate-local load-local build push run-generator run-loader run-day \
+	test lint generate-local load-local build push run-generator run-loader run-archiver run-day \
 	backfill-generate backfill-load
 
 # --- Terraform ---------------------------------------------------------------
@@ -35,10 +35,12 @@ tf-apply:
 test:
 	cd generator && uv run pytest -q
 	cd loader && uv run pytest -q
+	cd archiver && uv run pytest -q
 
 lint:
 	cd generator && uv run ruff check . && uv run ruff format --check .
 	cd loader && uv run ruff check . && uv run ruff format --check .
+	cd archiver && uv run ruff check . && uv run ruff format --check .
 
 # --- Execução local ----------------------------------------------------------
 
@@ -66,6 +68,9 @@ push: build
 
 run-generator:
 	gcloud run jobs execute generator --region $(REGION) --wait --update-env-vars RUN_DATE=$(RUN_DATE)
+
+run-archiver:
+	gcloud run jobs execute archiver --region $(REGION) --wait --update-env-vars RUN_DATE=$(RUN_DATE)
 
 run-loader:
 	gcloud run jobs execute loader --region $(REGION) --wait --update-env-vars RUN_DATE=$(RUN_DATE)

@@ -44,6 +44,13 @@ main:
                   region: ${region}
                   job: loader
                   run_date: ${run_date}
+            - run_archiver:
+                call: run_job
+                args:
+                  project: ${project}
+                  region: ${region}
+                  job: archiver
+                  run_date: ${run_date}
         except:
           as: e
           steps:

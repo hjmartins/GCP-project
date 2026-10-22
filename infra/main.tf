@@ -62,3 +62,10 @@ resource "google_project_iam_member" "pipeline_bq_job_user" {
   role    = "roles/bigquery.jobUser"
   member  = google_service_account.pipeline.member
 }
+
+# O archiver lê a Silver pela Storage Read API (sem consulta, sem bytes faturados como SELECT).
+resource "google_project_iam_member" "pipeline_bq_read_session" {
+  project = var.project_id
+  role    = "roles/bigquery.readSessionUser"
+  member  = google_service_account.pipeline.member
+}

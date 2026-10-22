@@ -17,6 +17,7 @@ resource "google_cloud_run_v2_job_iam_member" "workflow_runs_jobs" {
   for_each = toset(concat(
     google_cloud_run_v2_job.generator[*].name,
     google_cloud_run_v2_job.loader[*].name,
+    google_cloud_run_v2_job.archiver[*].name,
   ))
 
   name     = each.value

@@ -10,4 +10,6 @@ dbt/target
 dbt/logs
 dbt/dbt_packages
 loader/tests
+archiver/tests
+archiver/Dockerfile
 data
