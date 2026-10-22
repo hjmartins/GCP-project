@@ -15,8 +15,9 @@
 --   unit       'bytes' | 'count' | 'usd'
 --
 -- O custo estimado ignora o free tier (mostra quanto custaria fora dele), com os preços
--- on-demand de us-central1: US$ 6,25 por TiB consultado; US$ 0,02/GB/mês de storage ativo e
--- US$ 0,01/GB/mês de long-term (dado sem alteração há 90 dias).
+-- on-demand de us-central1 da Cloud Billing Catalog API (finops/experiments.md): US$ 6,25 por
+-- TiB consultado; storage lógico US$ 0,023/GiB/mês ativo e US$ 0,016/GiB/mês long-term (dado
+-- sem alteração há 90 dias).
 
 {% set run_date = "date('" ~ var('run_date') ~ "')" %}
 {% set region = 'region-' ~ target.location %}
@@ -70,8 +71,8 @@ storage_{{ dataset }} as (
 storage_agg as (
     select
         *,
-        active_logical_bytes / 1e9 * 0.02 + long_term_logical_bytes / 1e9 * 0.01
-            as estimated_monthly_cost
+        active_logical_bytes / pow(2, 30) * 0.023
+            + long_term_logical_bytes / pow(2, 30) * 0.016 as estimated_monthly_cost
     from (
         {% for dataset in datasets %}
         select * from storage_{{ dataset }}
